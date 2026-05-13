@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
-from database import Visit, Vitals
+from database import Visit
 from schemas import VisitCreate, VisitUpdate, VisitResponse, Vitals as VitalsSchema
 from dependencies import get_db
 
