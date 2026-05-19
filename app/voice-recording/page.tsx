@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AudioVisualizer } from '@/components/voice/audio-visualizer'
 import { useAudioRecorder } from '@/hooks/use-audio-recorder'
+import { transcribeAudio } from '@/lib/api-client'
 import {
   Mic,
   MicOff,
@@ -90,56 +91,26 @@ Plan: Order stress test and lipid panel. Continue current medications. Follow up
     setTranscription('')
 
     try {
-      const formData = new FormData()
-      formData.append('audio', audioBlob)
-      if (selectedPatient) {
-        formData.append(
-          'patientContext',
-          `Patient: ${selectedPatient.name}, Age: ${selectedPatient.age}, Allergies: ${selectedPatient.allergies.join(', ')}, Conditions: ${selectedPatient.chronicConditions.join(', ')}`
-        )
-      }
+      const patientContext = selectedPatient
+        ? `Patient: ${selectedPatient.name}, Age: ${selectedPatient.age}, Allergies: ${selectedPatient.allergies.join(', ')}, Conditions: ${selectedPatient.chronicConditions.join(', ')}`
+        : undefined
 
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData,
-      })
+      console.log(`[Voice Recording] Starting transcription with audioBlob size: ${audioBlob.size}`)
+      const response = await transcribeAudio(audioBlob, patientContext)
 
       if (!response.ok) {
-        throw new Error('Transcription failed')
+        const errorData = await response.text()
+        console.error(`[Voice Recording] API returned error: ${response.status} - ${errorData}`)
+        throw new Error(`Transcription failed: ${response.status}`)
       }
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No response body')
-
-      const decoder = new TextDecoder()
-      let fullText = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split('\n')
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim()
-            if (data === '[DONE]') continue
-            try {
-              const parsed = JSON.parse(data)
-              if (parsed.textDelta) {
-                fullText += parsed.textDelta
-                setTranscription(fullText)
-              }
-            } catch {
-              // Skip invalid JSON
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Transcription error:', err)
-      setError('Failed to transcribe audio. Please try again.')
+      const data = await response.json()
+      console.log(`[Voice Recording] Transcription successful:`, data)
+      setTranscription(data.text || '')
+    } catch (err: any) {
+      console.error('[Voice Recording] Transcription error:', err)
+      const errorMsg = err?.message || 'Failed to transcribe audio. Please try again.'
+      setError(errorMsg)
     } finally {
       setIsTranscribing(false)
     }

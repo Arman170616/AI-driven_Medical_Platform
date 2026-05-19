@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.orm import Session
 from uuid import uuid4
+from datetime import datetime
 import json
 from database import Transcription, Report, Visit
 from schemas import (
@@ -13,10 +14,23 @@ from schemas import (
     ReportResponse,
 )
 from dependencies import get_db
-from ai_service import MedicalAIService
+
+try:
+    from ai_service import MedicalAIService
+except Exception as e:
+    print(f"Warning: Failed to import AI service: {e}")
+    class MedicalAIService:
+        def __init__(self):
+            self.client = None
 
 router = APIRouter(prefix="/medical", tags=["medical"])
-ai_service = MedicalAIService()
+
+# Initialize AI service with error handling
+try:
+    ai_service = MedicalAIService()
+except Exception as e:
+    print(f"Warning: Failed to initialize AI service: {e}")
+    ai_service = None
 
 
 @router.post("/transcribe", response_model=TranscriptionResponse)
@@ -24,32 +38,63 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     patient_context: str = None,
     visit_id: str = None,
-    db: Session = Depends(get_db)
 ):
-    """Transcribe audio file (placeholder - would integrate Groq/Whisper)"""
+    """Transcribe audio file using Groq Whisper API"""
     
-    # Read file content
-    content = await file.read()
-    
-    # Placeholder transcription - in production, send to Groq Whisper API
-    transcription_text = "Patient presents with chief complaint of fatigue and chest discomfort."
-    
-    db_transcription = Transcription(
-        id=str(uuid4()),
-        visit_id=visit_id,
-        text=transcription_text,
-        duration=0.0,
-    )
-    
-    if visit_id:
-        visit = db.query(Visit).filter(Visit.id == visit_id).first()
-        if visit:
-            visit.transcription_id = db_transcription.id
-    
-    db.add(db_transcription)
-    db.commit()
-    db.refresh(db_transcription)
-    return db_transcription
+    try:
+        # Read file content
+        content = await file.read()
+        
+        from config import get_settings
+        
+        settings = get_settings()
+        
+        if not settings.groq_api_key:
+            raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
+        
+        # Use requests for transcription
+        import requests
+        
+        try:
+            # Prepare multipart form data
+            files = {
+                'file': (file.filename or 'audio.webm', content, file.content_type or 'audio/webm'),
+                'model': (None, 'whisper-large-v3-turbo'),
+            }
+            
+            headers = {
+                'Authorization': f'Bearer {settings.groq_api_key}'
+            }
+            
+            response = requests.post(
+                'https://api.groq.com/openai/v1/audio/transcriptions',
+                files=files,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"Groq API error: {response.text}")
+            
+            result = response.json()
+            transcription_text = result.get('text', '')
+            
+        except requests.RequestException as e:
+            raise HTTPException(status_code=500, detail=f"Transcription service error: {str(e)}")
+        
+        # Return transcription
+        return TranscriptionResponse(
+            id=str(uuid4()),
+            visit_id=visit_id,
+            text=transcription_text,
+            duration=0.0,
+            created_at=datetime.utcnow()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription error: {str(e)}")
 
 
 @router.post("/generate-report", response_model=GenerateReportResponse)

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { SOAPNotesDisplay } from '@/components/medical/soap-notes'
+import { generateReport } from '@/lib/api-client'
 import {
   Sparkles,
   FileText,
@@ -41,6 +42,7 @@ export default function NewReportPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [report, setReport] = useState<GeneratedReport | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const handleLoadSample = () => {
@@ -57,23 +59,24 @@ export default function NewReportPage() {
 
     setIsGenerating(true)
     setReport(null)
+    setError(null)
 
     try {
-      const response = await fetch('/api/generate-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcription,
-          patientContext: selectedPatient
-            ? `Name: ${selectedPatient.name}, Age: ${selectedPatient.age}, Gender: ${selectedPatient.gender}, Allergies: ${selectedPatient.allergies.join(', ')}, Chronic Conditions: ${selectedPatient.chronicConditions.join(', ')}`
-            : null,
-        }),
-      })
+      const patientContext = selectedPatient
+        ? `Name: ${selectedPatient.name}, Age: ${selectedPatient.age}, Gender: ${selectedPatient.gender}, Allergies: ${selectedPatient.allergies.join(', ')}, Chronic Conditions: ${selectedPatient.chronicConditions.join(', ')}`
+        : undefined
 
-      const data = await response.json()
+      const data = await generateReport(transcription, patientContext)
+      
+      if (!data || !data.soapNotes) {
+        throw new Error('Invalid report format received from server')
+      }
+      
       setReport(data)
-    } catch (error) {
-      console.error('Report generation error:', error)
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Failed to generate report. Please try again.'
+      console.error('[NewReportPage] Report generation error:', err)
+      setError(errorMsg)
     } finally {
       setIsGenerating(false)
     }
@@ -267,7 +270,19 @@ ${report.recommendations.map((r) => `- ${r}`).join('\n')}`
 
         {/* Output Section */}
         <div className="space-y-6">
-          {!report && !isGenerating && (
+          {error && (
+            <GlassCard className="p-4 border-red-500/50 bg-red-500/10">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-red-600 text-sm">Error</h3>
+                  <p className="text-red-600/90 text-sm mt-1">{error}</p>
+                </div>
+              </div>
+            </GlassCard>
+          )}
+          
+          {!report && !isGenerating && !error && (
             <GlassCard className="p-12 text-center">
               <Sparkles className="h-16 w-16 mx-auto mb-4 text-primary/50" />
               <h3 className="text-lg font-semibold text-foreground mb-2">Ready to Generate</h3>

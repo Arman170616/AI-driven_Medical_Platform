@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { DashboardShell } from '@/components/layout/dashboard-shell'
 import { GlassCard } from '@/components/glass/glass-card'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { suggestMedicines } from '@/lib/api-client'
 import {
   Pill,
   Plus,
@@ -35,11 +37,14 @@ interface MedicineSuggestion {
 }
 
 export default function PrescriptionsPage() {
+  const router = useRouter()
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
   const [items, setItems] = useState<PrescriptionItem[]>([])
   const [notes, setNotes] = useState('')
   const [suggestions, setSuggestions] = useState<MedicineSuggestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
+  const [isIssuing, setIsIssuing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleAddItem = () => {
     setItems([
@@ -106,11 +111,308 @@ export default function PrescriptionsPage() {
     ])
   }
 
+  const handleIssuePrescription = async () => {
+    if (!selectedPatient || items.length === 0) return
+
+    setIsIssuing(true)
+    setError(null)
+
+    try {
+      const prescriptionData = {
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        patientAge: selectedPatient.age,
+        medicines: items,
+        notes,
+        issuedDate: new Date().toISOString(),
+        status: 'issued',
+      }
+
+      // Save to localStorage (in a real app, this would be an API call)
+      localStorage.setItem('lastIssuedPrescription', JSON.stringify(prescriptionData))
+
+      // Show success message
+      alert(`Prescription issued successfully for ${selectedPatient.name}!`)
+
+      // Reset form
+      setItems([])
+      setNotes('')
+      setSelectedPatient(null)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to issue prescription'
+      console.error('[IssuePrescription]', err)
+      setError(errorMsg)
+    } finally {
+      setIsIssuing(false)
+    }
+  }
+
+  const handlePrintPreview = () => {
+    if (!selectedPatient || items.length === 0) return
+
+    try {
+      const printContent = generatePrintableContent()
+      
+      // Open print preview in a new window
+      const printWindow = window.open('', '', 'height=800,width=1000')
+      if (!printWindow) {
+        throw new Error('Could not open print window')
+      }
+
+      printWindow.document.write(printContent)
+      printWindow.document.close()
+      printWindow.print()
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to open print preview'
+      console.error('[PrintPreview]', err)
+      setError(errorMsg)
+    }
+  }
+
+  const generatePrintableContent = () => {
+    const today = new Date().toLocaleDateString()
+    
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Prescription - ${selectedPatient?.name}</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: white;
+          }
+          .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px;
+            background: white;
+          }
+          .header {
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            color: #0066cc;
+            font-size: 32px;
+            margin-bottom: 5px;
+          }
+          .header p {
+            color: #666;
+            font-size: 14px;
+          }
+          .patient-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+          }
+          .info-group label {
+            font-weight: bold;
+            color: #0066cc;
+            font-size: 12px;
+            display: block;
+            margin-bottom: 5px;
+          }
+          .info-group p {
+            color: #333;
+            font-size: 14px;
+          }
+          .medicines-section {
+            margin-bottom: 30px;
+          }
+          .medicines-section h2 {
+            color: #0066cc;
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0066cc;
+          }
+          .medicine-item {
+            background: #f9f9f9;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+          }
+          .medicine-name {
+            font-weight: bold;
+            color: #0066cc;
+            font-size: 16px;
+            margin-bottom: 8px;
+          }
+          .medicine-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 14px;
+            color: #555;
+          }
+          .medicine-details div {
+            margin-bottom: 5px;
+          }
+          .label {
+            font-weight: bold;
+            color: #333;
+          }
+          .notes-section {
+            background: #fff9e6;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+          }
+          .notes-section h3 {
+            color: #ff9800;
+            margin-bottom: 10px;
+            font-size: 14px;
+          }
+          .notes-section p {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+          }
+          .footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-top: 50px;
+            padding-top: 30px;
+            border-top: 1px solid #ddd;
+          }
+          .signature {
+            text-align: center;
+          }
+          .signature-line {
+            width: 100%;
+            border-top: 1px solid #333;
+            margin-top: 50px;
+            padding-top: 5px;
+            font-size: 12px;
+            color: #666;
+          }
+          .date-issued {
+            color: #666;
+            font-size: 12px;
+            margin-top: 20px;
+          }
+          @media print {
+            body { background: white; }
+            .container { padding: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📋 PRESCRIPTION</h1>
+            <p>Medical Prescription Document</p>
+          </div>
+
+          <div class="patient-info">
+            <div class="info-group">
+              <label>Patient Name</label>
+              <p>${selectedPatient?.name || 'N/A'}</p>
+            </div>
+            <div class="info-group">
+              <label>Age / Gender</label>
+              <p>${selectedPatient?.age} years | ${selectedPatient?.gender || 'N/A'}</p>
+            </div>
+            <div class="info-group">
+              <label>Blood Type</label>
+              <p>${selectedPatient?.bloodType || 'N/A'}</p>
+            </div>
+            <div class="info-group">
+              <label>Date Issued</label>
+              <p>${today}</p>
+            </div>
+          </div>
+
+          <div class="medicines-section">
+            <h2>Prescribed Medicines</h2>
+            ${items.map((item, index) => `
+              <div class="medicine-item">
+                <div class="medicine-name">${index + 1}. ${item.medicineName}</div>
+                <div class="medicine-details">
+                  <div><span class="label">Dosage:</span> ${item.dosage}</div>
+                  <div><span class="label">Frequency:</span> ${item.frequency}</div>
+                  <div><span class="label">Duration:</span> ${item.duration}</div>
+                  <div><span class="label">Quantity:</span> ${item.quantity} tablets</div>
+                </div>
+                ${item.instructions ? `
+                  <div style="margin-top: 8px; color: #666; font-size: 13px;">
+                    <span class="label">Instructions:</span> ${item.instructions}
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+
+          ${notes ? `
+            <div class="notes-section">
+              <h3>Additional Notes</h3>
+              <p>${notes}</p>
+            </div>
+          ` : ''}
+
+          ${selectedPatient?.allergies && selectedPatient.allergies.length > 0 ? `
+            <div style="background: #fee; border-left: 4px solid #f44336; padding: 15px; margin-bottom: 30px; border-radius: 4px;">
+              <h3 style="color: #f44336; margin-bottom: 10px; font-size: 14px;">⚠️ ALLERGIES</h3>
+              <p style="color: #c62828; font-size: 14px; font-weight: bold;">${selectedPatient.allergies.join(', ')}</p>
+            </div>
+          ` : ''}
+
+          <div class="footer">
+            <div class="signature">
+              <div class="signature-line">Doctor's Signature</div>
+              <div style="color: #666; font-size: 12px; margin-top: 5px;">Authorized Medical Practitioner</div>
+            </div>
+            <div class="signature">
+              <div class="signature-line">Patient's Signature</div>
+              <div style="color: #666; font-size: 12px; margin-top: 5px;">Patient / Guardian</div>
+            </div>
+          </div>
+
+          <div class="date-issued">
+            <p>Prescription issued: ${new Date().toLocaleString()}</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }
+
   return (
     <DashboardShell
       title="Prescriptions"
       subtitle="Generate AI-assisted prescriptions with drug interaction checks"
     >
+      {error && (
+        <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/50">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+            <div>
+              <h3 className="font-semibold text-red-600 text-sm">Error</h3>
+              <p className="text-red-600/90 text-sm mt-1">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Patient Selection & AI Suggestions */}
         <div className="space-y-6">
@@ -372,13 +674,24 @@ export default function PrescriptionsPage() {
           {/* Actions */}
           <div className="flex gap-3">
             <Button
+              onClick={handleIssuePrescription}
+              disabled={!selectedPatient || items.length === 0 || isIssuing}
               className="flex-1 rounded-xl bg-primary hover:bg-primary/90 py-6"
-              disabled={!selectedPatient || items.length === 0}
             >
-              <CheckCircle2 className="h-5 w-5 mr-2" />
-              Issue Prescription
+              {isIssuing ? (
+                <>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                  Issuing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-5 w-5 mr-2" />
+                  Issue Prescription
+                </>
+              )}
             </Button>
             <Button
+              onClick={handlePrintPreview}
               variant="outline"
               className="rounded-xl glass-button border-white/30 text-foreground py-6"
               disabled={!selectedPatient || items.length === 0}
