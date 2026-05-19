@@ -39,7 +39,7 @@ async def transcribe_audio(
     patient_context: str = None,
     visit_id: str = None,
 ):
-    """Transcribe audio file using Groq Whisper API"""
+    """Transcribe audio file using Google Speech-to-Text API"""
     
     try:
         # Read file content
@@ -49,35 +49,65 @@ async def transcribe_audio(
         
         settings = get_settings()
         
-        if not settings.groq_api_key:
-            raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
+        if not settings.google_gemini_api_key:
+            raise HTTPException(status_code=500, detail="GOOGLE_GEMINI_API_KEY not configured")
         
         # Use requests for transcription
         import requests
+        import base64
         
         try:
-            # Prepare multipart form data
-            files = {
-                'file': (file.filename or 'audio.webm', content, file.content_type or 'audio/webm'),
-                'model': (None, 'whisper-large-v3-turbo'),
+            # Encode audio to base64
+            audio_base64 = base64.b64encode(content).decode('utf-8')
+            
+            # Determine audio MIME type
+            mime_type = file.content_type or 'audio/webm'
+            if 'mp3' in mime_type or 'mpeg' in mime_type:
+                mime_type = 'audio/mpeg'
+            elif 'wav' in mime_type:
+                mime_type = 'audio/wav'
+            elif 'webm' in mime_type:
+                mime_type = 'audio/webm'
+            else:
+                mime_type = 'audio/webm'
+            
+            # Google Cloud Speech-to-Text API endpoint
+            url = 'https://speech.googleapis.com/v1/speech:recognize'
+            
+            payload = {
+                'config': {
+                    'encoding': 'LINEAR16' if 'wav' in mime_type else 'WEBM_OPUS',
+                    'sampleRateHertz': 16000,
+                    'languageCode': 'en-US',
+                    'model': 'latest_long',
+                },
+                'audio': {
+                    'content': audio_base64
+                }
             }
             
             headers = {
-                'Authorization': f'Bearer {settings.groq_api_key}'
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': settings.google_gemini_api_key
             }
             
             response = requests.post(
-                'https://api.groq.com/openai/v1/audio/transcriptions',
-                files=files,
+                url,
+                json=payload,
                 headers=headers,
-                timeout=30
+                timeout=60
             )
             
             if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail=f"Groq API error: {response.text}")
+                raise HTTPException(status_code=response.status_code, detail=f"Google Speech-to-Text API error: {response.text}")
             
             result = response.json()
-            transcription_text = result.get('text', '')
+            # Extract transcription from Google API response
+            transcription_text = ''
+            if 'results' in result and result['results']:
+                for result_item in result['results']:
+                    if 'alternatives' in result_item:
+                        transcription_text += result_item['alternatives'][0].get('transcript', '')
             
         except requests.RequestException as e:
             raise HTTPException(status_code=500, detail=f"Transcription service error: {str(e)}")

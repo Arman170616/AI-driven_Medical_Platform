@@ -1,4 +1,4 @@
-from groq import Groq
+import google.generativeai as genai
 from config import get_settings
 import json
 from typing import Optional
@@ -7,10 +7,14 @@ settings = get_settings()
 
 
 class MedicalAIService:
-    """Service for AI-powered medical operations using Groq API"""
+    """Service for AI-powered medical operations using Google Gemini API"""
     
     def __init__(self):
-        self.client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
+        if settings.google_gemini_api_key:
+            genai.configure(api_key=settings.google_gemini_api_key)
+            self.client = genai.GenerativeModel('gemini-pro')
+        else:
+            self.client = None
     
     async def generate_report(self, transcription: str, patient_context: Optional[str] = None) -> dict:
         """Generate medical report from transcription"""
@@ -39,22 +43,15 @@ Generate a detailed medical report in the following JSON format:
   "recommendations": ["recommendation 1", "recommendation 2"]
 }}"""
 
-            message = self.client.chat.completions.create(
-                model="mixtral-8x7b-32768",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a medical documentation expert. Generate structured medical reports from transcriptions. Always respond with valid JSON only, no markdown formatting or code blocks."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
+            message = self.client.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=2048,
+                )
             )
             
-            response_text = message.choices[0].message.content
+            response_text = message.text
             
             # Clean up markdown if present
             response_text = response_text.replace("```json\n", "").replace("```\n", "").replace("```", "")
@@ -87,22 +84,15 @@ Provide medication suggestions with dosing, warnings, and interaction checks in 
   "allergyAlerts": [{{"medicine": "name", "allergen": "allergen", "severity": "mild|moderate|severe", "description": "description"}}]
 }}"""
 
-            message = self.client.chat.completions.create(
-                model="mixtral-8x7b-32768",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a clinical pharmacist. Provide medication recommendations based on clinical information. Always respond with valid JSON only, no markdown formatting or code blocks."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
+            message = self.client.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    max_output_tokens=2048,
+                )
             )
             
-            response_text = message.choices[0].message.content
+            response_text = message.text
             
             # Clean up markdown if present
             response_text = response_text.replace("```json\n", "").replace("```\n", "").replace("```", "")

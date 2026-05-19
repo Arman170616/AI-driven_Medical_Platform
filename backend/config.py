@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     """Application settings from environment variables"""
-    groq_api_key: str = ""
+    google_gemini_api_key: str = ""
     database_url: str = "sqlite:///./medical_platform.db"
     debug: bool = True
     api_title: str = "AI Medical Platform API"
